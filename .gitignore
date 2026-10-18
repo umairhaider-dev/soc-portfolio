@@ -1,0 +1,15 @@
+# Credentials and secrets — never commit
+_private/
+*pass*.txt
+*password*
+*.key
+*.pem
+wazuh-install-files.tar
+
+# OS artifacts
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Unreferenced — login page screenshot, no portfolio value
+lab/evidence/SS1.png

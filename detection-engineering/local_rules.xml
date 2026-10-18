@@ -1,0 +1,135 @@
+<!--
+  Custom detection rules — Umair Haider
+  Deployed to /var/ossec/etc/rules/local_rules.xml on Wazuh 4.14.8
+
+  Rule IDs 100000+ are reserved for custom rules so that vendor
+  ruleset upgrades do not overwrite them.
+
+  Validate before restarting the manager:
+      sudo /var/ossec/bin/wazuh-analysisd -t
+
+  A ruleset error prevents the manager starting entirely rather than
+  degrading gracefully. An invalid if_sid produces only a WARNING and
+  the rule is silently discarded — treat any warning as blocking.
+
+  Field names below are for native Windows Event ID 4688
+  (newProcessName / parentProcessName). Sysmon uses image / parentImage
+  and would require parallel variants.
+
+  Documentation: detection-rules.md
+-->
+
+<group name="windows,custom_powershell,">
+
+  <!--
+    100100 — Base: PowerShell launched with a concealment or
+    execution-policy bypass flag.
+    Level 8: suspicious, but legitimate management tooling does this.
+  -->
+  <rule id="100100" level="8">
+    <if_sid>67027</if_sid>
+    <field name="win.eventdata.newProcessName" type="pcre2">(?i)powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\s-(w(indowstyle)?\s+hidden|nop(rofile)?\b|e(x|xecution)?p(olicy)?\s+bypass)</field>
+    <description>PowerShell executed with concealment or execution-policy bypass flag</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    100101 — Escalation: encoded command present.
+    Chains from 100100 rather than 67027 so the escalation supersedes
+    the base alert instead of duplicating it. One event, one alert.
+    Trade-off: an encoded command without a concealment flag will not
+    match. Accepted deliberately — see detection-rules.md.
+  -->
+  <rule id="100101" level="12">
+    <if_sid>100100</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\s-(e|ec|enc|encod\w*)\s+[A-Za-z0-9+/=]{20,}</field>
+    <description>PowerShell executed with Base64-encoded command - possible obfuscated payload</description>
+    <mitre>
+      <id>T1059.001</id>
+      <id>T1027</id>
+    </mitre>
+  </rule>
+
+  <!--
+    100102 — Office application spawning a command interpreter.
+    Matches the parent-child relationship rather than command-line
+    content, so it survives payload obfuscation. Detection at the TTP
+    level rather than the artefact level.
+  -->
+  <rule id="100102" level="14">
+    <if_sid>67027</if_sid>
+    <field name="win.eventdata.parentProcessName" type="pcre2">(?i)(winword|excel|powerpnt|outlook|msaccess)\.exe$</field>
+    <field name="win.eventdata.newProcessName" type="pcre2">(?i)(powershell|cmd|wscript|cscript|mshta)\.exe$</field>
+    <description>Office application spawned a command interpreter - likely macro-based execution</description>
+    <mitre>
+      <id>T1059.001</id>
+      <id>T1566.001</id>
+    </mitre>
+  </rule>
+
+</group>
+
+
+<group name="windows,authentication,custom_correlation,">
+
+  <!--
+    100200 — Repeated authentication failures against one account.
+    Stateful: counts matches of rule 60122 within the timeframe,
+    grouped by target account so failures spread across many accounts
+    do not aggregate into a false brute-force alert.
+
+    STATUS: deployed, validation incomplete. The lab is a standalone
+    workstation with no domain controller or network authentication
+    services, so sustained high-rate failure is not reproducible.
+    Thresholds below are design values, not measured ones.
+  -->
+  <rule id="100200" level="10" frequency="8" timeframe="120">
+    <if_matched_sid>60122</if_matched_sid>
+    <same_field>win.eventdata.targetUserName</same_field>
+    <description>Multiple authentication failures against a single account - possible brute force</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    100201 — Failures across many accounts from one source.
+    Same source event as 100200, opposite grouping key. Password
+    spraying stays below per-account lockout thresholds by design,
+    which makes this the more operationally relevant of the two in a
+    lockout-enabled environment.
+  -->
+  <rule id="100201" level="11" frequency="15" timeframe="300">
+    <if_matched_sid>60122</if_matched_sid>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <different_field>win.eventdata.targetUserName</different_field>
+    <description>Authentication failures across multiple accounts from one source - possible password spraying</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+  </rule>
+
+  <!--
+    100202 — Success following repeated failures.
+    Parent rule 60118 is Windows Workstation Logon Success, identified
+    empirically from live telemetry rather than assumed.
+
+    Note: timeframe is a rule ATTRIBUTE, not a child element. Using it
+    as a child element prevents the ruleset loading and the manager
+    from starting.
+  -->
+  <rule id="100202" level="13" timeframe="300">
+    <if_sid>60118</if_sid>
+    <if_matched_sid>100200</if_matched_sid>
+    <same_field>win.eventdata.targetUserName</same_field>
+    <description>Successful logon immediately following repeated failures - possible successful brute force</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+</group>
