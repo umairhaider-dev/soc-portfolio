@@ -274,3 +274,33 @@ Note on T1566.001: rule 100102 detects the *consequence* of a malicious attachme
 | `local_rules.xml` | Rule definitions as deployed to `/var/ossec/etc/rules/` on the manager |
 | `evidence/` | Before/after dashboard screenshots |
 
+## Kerberoasting (T1558.003) — Rules 100110, 100111
+
+**Status:** Syntax-checked and loaded. Logic unvalidated — no domain controller in lab.
+
+**What it detects:**
+It detects an attacker with any domain account requesting a service tickets so that he can crack password offline.
+
+**Data source:**
+Its Event 4769 in the security logs on domain controller. Needs “Audit Kerberos Service Ticket Operations” turned on.
+
+**Rule 100110 — level 8:**
+It gets one event 4769 with 0x17 encryption and that service not be a computer account, its medium level because a single RC4 ticket can be from a legitimate legacy application. 
+
+**Rule 100111 — level 12:**
+the same one account triggers rule 100110 for 5 or more different services within 5 mins, an attack tools request every SPN within seconds.
+
+**Parent rule note:**
+60106 matches both 4624 and 4769, so without ^4769$, rule 100110 would check every successful logon. Also, 10110 is missing a zero.
+
+**Expected false positives:**
+Legacy applications or service accounts configured to allow only RC4
+
+**Known evasion:**
+Attacker requests AES tickets and that will avoids the RC4 signal
+
+**Stronger alternative:**
+honeypot SPN, a fake service account with an SPN nothing have real use. Any request for it is malicious because legit user never gets it. near zero false positives and it catches AES requests too
+
+**Validation plan:**
+Test domain controller, a service account with SPN and tools requests service tickets in bulk, confirm both rules fires.

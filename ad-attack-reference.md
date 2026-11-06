@@ -1,0 +1,11 @@
+# Active Directory Attack Reference
+
+| Attack | ATT&CK | Mechanism (one line) | Prerequisite | Event IDs | Detection looks for | Mitigation |
+|---|---|---|---|---|---|---|
+| Kerberoasting | T1558.003 | Request service tickets for SPN accounts, crack offline | Any domain user | 4769 | RC4 (0x17) tickets for user service accounts; one account → many SPNs; honeypot SPN | Long random service passwords, gMSA, disable RC4 |
+| Pass-the-Hash | T1550.002 | Attacker dumps NTLM hashes from memory (LSASS) on one machine and then uses hash to log in to other machines over NTLM | Local admin on one machine | 4624 | 4624 logon type 3 using NTLM; One account logging into many hosts in short time; 4624 type 9 with logon process seclogo, on the attacker’s machine | Unique local admin passwords (LAPS), restricting NTLM, Credential Guard |
+| AS-REP Roasting | T1558.004 | Request a TGT without pre-auth; the reply contains data encrypted with the user’s password key; crack it offline | Target account with pre-auth disabled; no domain login needed if you know the usernames | 4768 | 4768 with Pre-Authentication Type 0, often with RC4 (0x17) | Find every account with the flag and remove it |
+| DCSync | T1003.006 | Attacker holding replication rights pretends to be a DC and asks a real DC to replicate | Must have replication rights | 4662; 5136 | Event 4662 on a DC containing the replication permission GUIDs; when someone grants rights; requesting account is not a DC computer account | Regularly audit who holds replication rights |
+| Golden Ticket | T1558.001 | With the KRBTGT hash the attacker forges their own TGTs. TGT is encrypted with the KRBTGT key, so the KDC accepts it as genuine | Must have KRBTGT hash (usually from DCSync) | 4769 | 4769 with no earlier 4768 for that account; Abnormal ticket lifetimes; RC4 used instead AES; Account names or group memberships that don’t exist | Protect Domain Admin accounts and DCs, and rotate KRBTGT regularly. Recovery: reset KRBTGT twice |
+
+**Rule 100110/100111** in this repo implement the Kerberoasting row.
